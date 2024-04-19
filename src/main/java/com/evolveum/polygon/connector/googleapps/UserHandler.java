@@ -89,7 +89,6 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
     public static final String IS_MAILBOX_SETUP_ATTR = "isMailboxSetup";
     public static final String THUMBNAIL_PHOTO_URL_ATTR = "thumbnailPhotoUrl";
     public static final String DELETION_TIME_ATTR = "deletionTime";
-    public static final String OFFICE = "Office";
 
     private static final Map<String, String> NAME_DICTIONARY;
     private static final Set<String> S;
@@ -128,7 +127,6 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         dictionary.put("address/country", "addressCountry");
         dictionary.put("orgName", "orgName");
         dictionary.put("organizations/name", "orgName");
-        dictionary.put(OFFICE,OFFICE);
         NAME_DICTIONARY = dictionary;
 
         Set<String> s = CollectionUtil.newCaseInsensitiveSet();

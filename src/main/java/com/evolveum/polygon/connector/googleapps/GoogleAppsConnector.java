@@ -136,7 +136,6 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
     public static final String TYPE_ATTR = "type";
     public static final String PRODUCT_ID_SKU_ID_USER_ID = "productId,skuId,userId";
     public static final String PHOTO_ATTR = "__PHOTO__";
-    public static final String OFFICE = "Office";
 
     /**
      * Place holder for the {@link Configuration} passed into the init() method
