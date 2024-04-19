@@ -66,6 +66,10 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
     private String productId = null;
     private String skuId = null;
     private Boolean autoAddLicense = false;
+    private String projection = "BASIC";
+    private String customFieldMask = null;
+    private String customerId = null;
+
     /**
      * Client identifier issued to the client during the registration process.
      */
@@ -271,7 +275,8 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
                                         .createScoped(DirectoryScopes.ADMIN_DIRECTORY_USER,
                                                 DirectoryScopes.ADMIN_DIRECTORY_GROUP,
                                                 DirectoryScopes.ADMIN_DIRECTORY_GROUP,
-                                                LicensingScopes.APPS_LICENSING)
+                                                LicensingScopes.APPS_LICENSING,
+                                                DirectoryScopes.ADMIN_DIRECTORY_USERSCHEMA_READONLY)
                                         .createDelegated(getServiceAccountUser());
                             } catch (IOException e) {
                                 throw new ConfigurationException("Invalid Service Account Key", e);
@@ -336,5 +341,29 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
             }
         }
         HTTP_TRANSPORT = t;
+    }
+
+    public void setProjection(String projection) {
+        this.projection = projection;
+    }
+
+    public void setCustomFieldMask(String customFieldMask) {
+        this.customFieldMask = customFieldMask;
+    }
+
+    public String getProjection() {
+        return projection;
+    }
+
+    public String getCustomFieldMask() {
+        return customFieldMask;
+    }
+
+    public String getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(String customerId) {
+        this.customerId = customerId;
     }
 }

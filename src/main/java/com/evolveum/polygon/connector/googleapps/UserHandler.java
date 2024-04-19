@@ -24,10 +24,8 @@
 package com.evolveum.polygon.connector.googleapps;
 
 import com.google.api.services.directory.Directory;
-import com.google.api.services.directory.model.Alias;
-import com.google.api.services.directory.model.User;
-import com.google.api.services.directory.model.UserName;
-import com.google.api.services.directory.model.UserPhoto;
+import com.google.api.services.directory.model.*;
+import com.google.api.services.directory.model.Schema;
 import com.google.common.base.CharMatcher;
 import com.google.common.escape.Escaper;
 import com.google.common.escape.Escapers;
@@ -43,9 +41,7 @@ import org.identityconnectors.framework.common.objects.filter.*;
 import org.identityconnectors.framework.common.objects.AttributeInfo.Flags;
 
 import java.io.IOException;
-import java.util.Map;
-import java.util.Set;
-import java.util.EnumSet;
+import java.util.*;
 
 import static com.evolveum.polygon.connector.googleapps.GoogleAppsConnector.ID_ATTR;
 import static com.evolveum.polygon.connector.googleapps.GoogleAppsConnector.PHOTO_ATTR;
@@ -93,6 +89,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
     public static final String IS_MAILBOX_SETUP_ATTR = "isMailboxSetup";
     public static final String THUMBNAIL_PHOTO_URL_ATTR = "thumbnailPhotoUrl";
     public static final String DELETION_TIME_ATTR = "deletionTime";
+    public static final String OFFICE = "Office";
 
     private static final Map<String, String> NAME_DICTIONARY;
     private static final Set<String> S;
@@ -131,6 +128,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         dictionary.put("address/country", "addressCountry");
         dictionary.put("orgName", "orgName");
         dictionary.put("organizations/name", "orgName");
+        dictionary.put(OFFICE,OFFICE);
         NAME_DICTIONARY = dictionary;
 
         Set<String> s = CollectionUtil.newCaseInsensitiveSet();
@@ -312,7 +310,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
     // USER https://developers.google.com/admin-sdk/directory/v1/reference/users
     //
     // /////////////
-    public static ObjectClassInfo getUserClassInfo() {
+    public static ObjectClassInfo getUserClassInfo(Schemas schemas, GoogleAppsConfiguration googleAppsConfiguration) {
         // @formatter:off
             /*
          {
@@ -499,6 +497,25 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         builder.addAttributeInfo(AttributeInfoBuilder.define(PHOTO_ATTR, byte[].class)
                 .setReturnedByDefault(false).build());
 
+
+
+        if (schemas != null){
+            ArrayList<CustomAttribute> customAttributes = getCustomSchemaAttributes(schemas,googleAppsConfiguration);
+            if (!customAttributes.isEmpty()){
+                for (CustomAttribute attribute : customAttributes){
+                    if (attribute.getType().equals("BOOL")){
+                        builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName()).setType(Boolean.class).setMultiValued(attribute.isMultiValued())
+                                .build());
+                    } else {
+                        builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName())
+                                .build());
+                    }
+
+                }
+            }
+        }
+
+
         /* 
         builder.addAttributeInfo(PredefinedAttributeInfos.GROUPS.setReturnedByDefault(true));
         AttributeInfoBuilder subjectId = new AttributeInfoBuilder();
@@ -516,6 +533,66 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         builder.addAttributeInfo(GROUPS);
 
         return builder.build();
+    }
+
+    public static ArrayList<CustomAttribute> getCustomSchemaAttributes(Schemas schemas,GoogleAppsConfiguration googleAppsConfiguration){
+        ArrayList<CustomAttribute> customAttributes = new ArrayList<>();
+        List<Schema> schemaList = schemas.getSchemas();
+
+        for (Schema schema : schemaList) {
+            String schemaName = schema.getSchemaName();
+            if (!approveScheme(schemaName, googleAppsConfiguration)) {
+                continue;
+            }
+            for (SchemaFieldSpec fieldSpec : schema.getFields()) {
+                customAttributes.add(new CustomAttribute(schemaName+"."+ fieldSpec.getFieldName(),fieldSpec.getFieldType(),fieldSpec.getMultiValued()));
+            }
+        }
+
+        return customAttributes;
+    }
+
+    public static class CustomAttribute {
+        private String name;
+        private String type;
+        private boolean multiValued;
+
+        public CustomAttribute(String name, String type, boolean multiValued) {
+            this.name = name;
+            this.type = type;
+            this.multiValued = multiValued;
+        }
+
+        // Getters
+        public String getName() {
+            return name;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public boolean isMultiValued() {
+            return multiValued;
+        }
+    }
+
+    public static boolean approveScheme(String schemaName,GoogleAppsConfiguration googleAppsConfiguration){
+        if (googleAppsConfiguration.getProjection().equals("FULL")){
+            return true;
+        }
+        if (!googleAppsConfiguration.getProjection().equals("BASIC")){
+            String[] parts = googleAppsConfiguration.getCustomFieldMask().split(",");
+
+            for (String part : parts) {
+                if (schemaName.equals(part)){
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return false;
     }
 
     // https://support.google.com/a/answer/33386
