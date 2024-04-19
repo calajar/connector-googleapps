@@ -129,7 +129,6 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         dictionary.put("address/country", "addressCountry");
         dictionary.put("orgName", "orgName");
         dictionary.put("organizations/name", "orgName");
-        dictionary.put(OFFICE,OFFICE);
         NAME_DICTIONARY = dictionary;
 
         Set<String> s = CollectionUtil.newCaseInsensitiveSet();
