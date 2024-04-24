@@ -131,6 +131,11 @@ public class GoogleAppsUtil {
             }
             return attrItems;
         }
+        if (attr.getName().equals("relations")){
+            ArrayList<Object> attrItems = new ArrayList();
+            attrItems.add("{\"relations\": []}");
+            return attrItems;
+        }
         return null;
     }
     

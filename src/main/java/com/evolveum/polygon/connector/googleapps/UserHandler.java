@@ -498,17 +498,19 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
 
 
         if (schemas != null){
-            ArrayList<CustomAttribute> customAttributes = getCustomSchemaAttributes(schemas,googleAppsConfiguration);
-            if (!customAttributes.isEmpty()){
-                for (CustomAttribute attribute : customAttributes){
-                    if (attribute.getType().equals("BOOL")){
-                        builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName()).setType(Boolean.class).setMultiValued(attribute.isMultiValued())
-                                .build());
-                    } else {
-                        builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName())
-                                .build());
-                    }
+            List<ArrayList<CustomAttribute>> allSchemas = getCustomSchemaAttributes(schemas,googleAppsConfiguration);
+            if (!allSchemas.isEmpty()){
+                for (ArrayList<CustomAttribute> schema : allSchemas){
+                    for (CustomAttribute attribute : schema){
+                        if (attribute.getType().equals("BOOL")){
+                            builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName()).setType(Boolean.class).setMultiValued(attribute.isMultiValued())
+                                    .build());
+                        } else {
+                            builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName())
+                                    .build());
+                        }
 
+                    }
                 }
             }
         }
@@ -533,32 +535,39 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         return builder.build();
     }
 
-    public static ArrayList<CustomAttribute> getCustomSchemaAttributes(Schemas schemas,GoogleAppsConfiguration googleAppsConfiguration){
-        ArrayList<CustomAttribute> customAttributes = new ArrayList<>();
+    public static List<ArrayList<CustomAttribute>> getCustomSchemaAttributes(Schemas schemas,GoogleAppsConfiguration googleAppsConfiguration){
+
+        ArrayList<ArrayList<CustomAttribute>> customSchemas = new ArrayList<>();
         List<Schema> schemaList = schemas.getSchemas();
 
         for (Schema schema : schemaList) {
+            ArrayList<CustomAttribute> customAttributes = new ArrayList<>();
             String schemaName = schema.getSchemaName();
             if (!approveScheme(schemaName, googleAppsConfiguration)) {
                 continue;
             }
             for (SchemaFieldSpec fieldSpec : schema.getFields()) {
-                customAttributes.add(new CustomAttribute(schemaName+"."+ fieldSpec.getFieldName(),fieldSpec.getFieldType(),fieldSpec.getMultiValued()));
+                customAttributes.add(new CustomAttribute(schemaName+"."+ fieldSpec.getFieldName(),fieldSpec.getFieldType(),fieldSpec.getMultiValued(),schemaName,fieldSpec.getFieldName()));
             }
+            customSchemas.add(customAttributes);
         }
 
-        return customAttributes;
+        return customSchemas;
     }
 
     public static class CustomAttribute {
         private String name;
         private String type;
+        private String schemaName;
+        private String fieldName;
         private boolean multiValued;
 
-        public CustomAttribute(String name, String type, boolean multiValued) {
+        public CustomAttribute(String name, String type, boolean multiValued,String schemaName, String fieldName) {
             this.name = name;
             this.type = type;
             this.multiValued = multiValued;
+            this.schemaName = schemaName;
+            this.fieldName = fieldName;
         }
 
         // Getters
@@ -568,6 +577,12 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
 
         public String getType() {
             return type;
+        }
+        public String getSchemaName() {
+            return schemaName;
+        }
+        public String getFieldName() {
+            return fieldName;
         }
 
         public boolean isMultiValued() {
@@ -595,7 +610,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
 
     // https://support.google.com/a/answer/33386
     public static Directory.Users.Insert createUser(Directory.Users users,
-            AttributesAccessor attributes) {
+            AttributesAccessor attributes,Schemas schemas,GoogleAppsConfiguration configuration) {
         User user = new User();
         user.setPrimaryEmail(GoogleAppsUtil.getName(attributes.getName()));
         GuardedString password = attributes.getPassword();
@@ -643,6 +658,39 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         user.setIncludeInGlobalAddressList(attributes
                 .findBoolean(INCLUDE_IN_GLOBAL_ADDRESS_LIST_ATTR));
 
+        if (schemas != null){
+            Map<String, Map<String, Object>> customSchemas = new HashMap<>();
+            List<ArrayList<CustomAttribute>> allSchemas = getCustomSchemaAttributes(schemas,configuration);
+            if (!allSchemas.isEmpty()){
+                for (ArrayList<CustomAttribute> customAttributes : allSchemas){
+                    String schemaName = null;
+                    Map<String, Object> customAttr = new HashMap<>();
+                    for (CustomAttribute attribute : customAttributes){
+                        Attribute schemaAttr = attributes.find(attribute.getName());
+                        if (schemaAttr != null) {
+                            schemaName = attribute.schemaName;
+                            if (!attribute.multiValued){
+                                if (schemaAttr.getValue()== null){
+                                    customAttr.put(attribute.fieldName,null);
+                                } else {
+                                    customAttr.put(attribute.fieldName,schemaAttr.getValue().get(0));
+                                }
+                            } else {
+                                customAttr.put(attribute.fieldName,schemaAttr.getValue().toString());
+                            }
+
+                        }
+                    }
+                    if (!customAttr.isEmpty()){
+                        customSchemas.put(schemaName,customAttr);
+                    }
+                }
+                if (!customSchemas.isEmpty()){
+                    user.setCustomSchemas(customSchemas);
+                }
+            }
+        }
+
         try {
             return users.insert(user).setFields(ID_ETAG);
             // } catch (HttpResponseException e){
@@ -653,7 +701,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
     }
 
     public static Directory.Users.Patch updateUser(Directory.Users users, Uid uid,
-            AttributesAccessor attributes) {
+            AttributesAccessor attributes,Schemas schemas,GoogleAppsConfiguration configuration) {
         User content = null;
 
         Name email = attributes.getName();
@@ -755,6 +803,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
             content.setExternalIds(GoogleAppsUtil.getStructAttr(externalIds));
         }
 
+
         Attribute relations = attributes.find(RELATIONS_ATTR);
         if (null != relations) {
             if (null == content) {
@@ -808,6 +857,42 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
                     content = new User();
                 }
                 content.setIncludeInGlobalAddressList(booleanValue);
+            }
+        }
+
+        if (schemas != null){
+            Map<String, Map<String, Object>> customSchemas = new HashMap<>();
+            List<ArrayList<CustomAttribute>> allSchemas = getCustomSchemaAttributes(schemas,configuration);
+            if (!allSchemas.isEmpty()){
+                for (ArrayList<CustomAttribute> customAttributes : allSchemas){
+                    String schemaName = null;
+                    Map<String, Object> customAttr = new HashMap<>();
+                    for (CustomAttribute attribute : customAttributes){
+                        Attribute schemaAttr = attributes.find(attribute.getName());
+                        if (schemaAttr != null) {
+                            if (null == content) {
+                                content = new User();
+                            }
+                            schemaName = attribute.schemaName;
+                            if (!attribute.multiValued){
+                                if (schemaAttr.getValue()== null){
+                                    customAttr.put(attribute.fieldName,null);
+                                } else {
+                                    customAttr.put(attribute.fieldName,schemaAttr.getValue().get(0));
+                                }
+                            } else {
+                                customAttr.put(attribute.fieldName,schemaAttr.getValue().toString());
+                            }
+
+                        }
+                    }
+                    if (!customAttr.isEmpty()){
+                        customSchemas.put(schemaName,customAttr);
+                    }
+                }
+                if (!customSchemas.isEmpty()){
+                    content.setCustomSchemas(customSchemas);
+                }
             }
         }
 

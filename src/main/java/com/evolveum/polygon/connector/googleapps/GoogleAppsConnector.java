@@ -189,10 +189,15 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                       final OperationOptions options) {
         final AttributesAccessor accessor = new AttributesAccessor(createAttributes);
 
+        Schemas schemas = null;
+        if (!this.configuration.getProjection().equals("BASIC")){
+            schemas= executeUserSchema(this.configuration.getCustomerId());
+        }
+
         if (ObjectClass.ACCOUNT.equals(objectClass)) {
 
             Uid uid
-                    = execute(createUser(configuration.getDirectory().users(), accessor),
+                    = execute(createUser(configuration.getDirectory().users(), accessor,schemas,this.configuration),
                     new RequestResultHandler<Directory.Users.Insert, User, Uid>() {
                         public Uid handleResult(final Directory.Users.Insert request,
                                                 final User value) {
@@ -1333,9 +1338,14 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
         Uid uidAfterUpdate = uid;
         if (ObjectClass.ACCOUNT.equals(objectClass)) {
 
+            Schemas schemas = null;
+            if (!this.configuration.getProjection().equals("BASIC")){
+                schemas= executeUserSchema(this.configuration.getCustomerId());
+            }
+
             final Directory.Users.Patch patch
                     = updateUser(configuration.getDirectory().users(), uid,
-                    attributesAccessor);
+                    attributesAccessor,schemas,this.configuration);
             if (null != patch) {
                 uidAfterUpdate
                         = execute(patch,
