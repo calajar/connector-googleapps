@@ -938,7 +938,9 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
          */
         // @formatter:on
         try {
-            return service.update(userKey, content).setFields(ID_ATTR);
+            /*Directory.Users.Photos.Update update = service.update(userKey, content).setFields(ID_ATTR);*/
+            Directory.Users.Photos.Update update = service.update(userKey, content);
+            return update;
             // } catch (HttpResponseException e){
         } catch (IOException e) {
             logger.warn(e, "Failed to initialize Aliases#Insert");

@@ -350,14 +350,23 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
         this.customFieldMask = customFieldMask;
     }
 
+    @ConfigurationProperty(order = 12, displayMessageKey = "projection.display",
+            groupMessageKey = "basic.group", helpMessageKey = "projection.help", required = true,
+            confidential = false)
     public String getProjection() {
         return projection;
     }
 
+    @ConfigurationProperty(order = 12, displayMessageKey = "customFieldMask.display",
+            groupMessageKey = "basic.group", helpMessageKey = "customFieldMask.help", required = true,
+            confidential = false)
     public String getCustomFieldMask() {
         return customFieldMask;
     }
 
+    @ConfigurationProperty(order = 12, displayMessageKey = "customerId.display",
+            groupMessageKey = "basic.group", helpMessageKey = "customerId.help", required = true,
+            confidential = false)
     public String getCustomerId() {
         return customerId;
     }
