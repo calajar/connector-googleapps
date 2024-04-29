@@ -1221,6 +1221,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                 }
             }
         }
+        attributesToGet.add(PHOTO_ATTR);
         return attributesToGet;
     }
 
@@ -1357,6 +1358,42 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                             }
                         });
             }
+
+            Attribute photo = attributesAccessor.find(PHOTO_ATTR);
+            if (null != photo) {
+                Object photoObject = AttributeUtil.getSingleValue(photo);
+                if (photoObject instanceof byte[]) {
+
+                    String id
+                            = execute(createUpdateUserPhoto(configuration.getDirectory().users()
+                                    .photos(), uid.getUidValue(), (byte[]) photoObject),
+                            new RequestResultHandler<Directory.Users.Photos.Update, UserPhoto, String>() {
+                                public String handleResult(
+                                        final Directory.Users.Photos.Update request,
+                                        final UserPhoto value) {
+                                    if (null != value) {
+                                        return value.getId();
+                                    } else {
+                                        return null;
+                                    }
+                                }
+                            });
+
+                    if (null == id) {
+                        // TODO make warn about failed update
+                    }
+
+                } else if (null != photoObject) {
+                    // Delete group and Error or
+                    RetryableException e
+                            = RetryableException.wrap("Invalid attribute value: "
+                            + String.valueOf(photoObject), uid);
+                    e.initCause(new InvalidAttributeValueException(
+                            "Attribute 'photo' must be a single Map value"));
+                    throw e;
+                }
+            }
+
             // aliases
             if (null != attributesAccessor.findStringList(ALIASES_ATTR)) {
                 List<String> aliases = new ArrayList(attributesAccessor.findStringList(ALIASES_ATTR));
