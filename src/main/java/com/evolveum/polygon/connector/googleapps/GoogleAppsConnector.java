@@ -29,6 +29,7 @@ import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.googleapis.services.json.AbstractGoogleJsonClientRequest;
 import com.google.api.client.http.HttpStatusCodes;
 import com.google.api.services.directory.Directory;
+import com.google.api.services.directory.model.Schemas;
 import com.google.api.services.directory.model.*;
 import com.google.api.services.licensing.Licensing;
 import com.google.api.services.licensing.LicensingRequest;
@@ -136,6 +137,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
     public static final String PRODUCT_ID_SKU_ID_USER_ID = "productId,skuId,userId";
     public static final String PHOTO_ATTR = "__PHOTO__";
     public static final String LOCATIONS_ATTR = "locations";
+    public static final String OFFICE = "Office";
 
     /**
      * Place holder for the {@link Configuration} passed into the init() method
@@ -189,10 +191,15 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                       final OperationOptions options) {
         final AttributesAccessor accessor = new AttributesAccessor(createAttributes);
 
+        Schemas schemas = null;
+        if (!this.configuration.getProjection().equals("BASIC")){
+            schemas= executeUserSchema(this.configuration.getCustomerId());
+        }
+
         if (ObjectClass.ACCOUNT.equals(objectClass)) {
 
             Uid uid
-                    = execute(createUser(configuration.getDirectory().users(), accessor),
+                    = execute(createUser(configuration.getDirectory().users(), accessor,schemas,this.configuration),
                     new RequestResultHandler<Directory.Users.Insert, User, Uid>() {
                         public Uid handleResult(final Directory.Users.Insert request,
                                                 final User value) {
@@ -510,7 +517,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
         if (null == schema) {
             final SchemaBuilder builder = new SchemaBuilder(GoogleAppsConnector.class);
 
-            ObjectClassInfo user = getUserClassInfo();
+            ObjectClassInfo user = getUserClass();
             builder.defineObjectClass(user);
 
             ObjectClassInfo group = getGroupClassInfo();
@@ -539,6 +546,14 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             schema = builder.build();
         }
         return schema;
+    }
+
+    private ObjectClassInfo getUserClass(){
+        Schemas schemas = null;
+        if (!this.configuration.getProjection().equals("BASIC")){
+            schemas= executeUserSchema(this.configuration.getCustomerId());
+        }
+        return getUserClassInfo(schemas,this.configuration);
     }
 
     /**
@@ -574,6 +589,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                 executeAccountSearchQuery(query, handler, options, attributesToGet);
             } else {
                 // Read request
+                /*executeUserSchema("C01sor88u");*/
                 executeAccountReadQuery(uid, handler, options, attributesToGet);
             }
         } else if (ObjectClass.GROUP.equals(objectClass)) {
@@ -1007,8 +1023,11 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             // No success in cache, do the remote call
             Directory.Users.Get request
                     = configuration.getDirectory().users().get(uid.getUidValue());
-            request.setFields(getFields(options, ID_ATTR, ETAG_ATTR, PRIMARY_EMAIL_ATTR));
-
+            request.setProjection(this.configuration.getProjection());
+            if (this.configuration.getProjection().equals("CUSTOM")){
+                request.setCustomFieldMask(this.configuration.getCustomFieldMask());
+            }
+            /*request.setFields(getFields(options, ID_ATTR, ETAG_ATTR, PRIMARY_EMAIL_ATTR));*/
             execute(request,
                     new RequestResultHandler<Directory.Users.Get, User, Boolean>() {
                         public Boolean handleResult(final Directory.Users.Get request,
@@ -1029,6 +1048,33 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             logger.warn(e, "Failed to initialize Groups#Get");
             throw ConnectorException.wrap(e);
         }
+    }
+
+    private Schemas executeUserSchema(String customerId) {
+        Schemas schemas = null;
+        try {
+            Directory.Schemas.List request
+                    = configuration.getDirectory().schemas().list(customerId);
+            /*request.setFields(getFields(options, ID_ATTR, ETAG_ATTR, PRIMARY_EMAIL_ATTR));*/
+            schemas = execute(request,
+                    new RequestResultHandler<Directory.Schemas.List, Schemas, Schemas>() {
+                        public Schemas handleResult(final Directory.Schemas.List request,
+                                                    final Schemas value) {
+                            return value;
+                        }
+
+                        public Schemas handleNotFound(IOException e) {
+                            // Do nothing if not found
+                            return null;
+                        }
+                    });
+
+        } catch (IOException e) {
+            logger.warn(e, "Failed to initialize Schema#GetList");
+            throw ConnectorException.wrap(e);
+        }
+
+        return schemas;
     }
 
     private void executeAccountSearchQuery(Filter query, final ResultsHandler handler, OperationOptions options, final Set<String> attributesToGet) {
@@ -1063,8 +1109,13 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
 
             // Implementation to support the 'OP_ATTRIBUTES_TO_GET'
             String fields = getFields(options, ID_ATTR, ETAG_ATTR, PRIMARY_EMAIL_ATTR);
+
             if (null != fields) {
-                request.setFields("nextPageToken,users(" + fields + ")");
+                if (this.configuration.getProjection().equals("CUSTOM")){
+                    request.setCustomFieldMask(this.configuration.getCustomFieldMask());
+                } else {
+                    request.setFields("nextPageToken,users(" + fields + ")");
+                }
             }
 
             if (options.getOptions().get(SHOW_DELETED_PARAM) instanceof Boolean) {
@@ -1172,6 +1223,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                 }
             }
         }
+        attributesToGet.add(PHOTO_ATTR);
         return attributesToGet;
     }
 
@@ -1289,9 +1341,14 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
         Uid uidAfterUpdate = uid;
         if (ObjectClass.ACCOUNT.equals(objectClass)) {
 
+            Schemas schemas = null;
+            if (!this.configuration.getProjection().equals("BASIC")){
+                schemas= executeUserSchema(this.configuration.getCustomerId());
+            }
+
             final Directory.Users.Patch patch
                     = updateUser(configuration.getDirectory().users(), uid,
-                    attributesAccessor);
+                    attributesAccessor,schemas,this.configuration);
             if (null != patch) {
                 uidAfterUpdate
                         = execute(patch,
@@ -1303,6 +1360,42 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                             }
                         });
             }
+
+            Attribute photo = attributesAccessor.find(PHOTO_ATTR);
+            if (null != photo) {
+                Object photoObject = AttributeUtil.getSingleValue(photo);
+                if (photoObject instanceof byte[]) {
+
+                    String id
+                            = execute(createUpdateUserPhoto(configuration.getDirectory().users()
+                                    .photos(), uid.getUidValue(), (byte[]) photoObject),
+                            new RequestResultHandler<Directory.Users.Photos.Update, UserPhoto, String>() {
+                                public String handleResult(
+                                        final Directory.Users.Photos.Update request,
+                                        final UserPhoto value) {
+                                    if (null != value) {
+                                        return value.getId();
+                                    } else {
+                                        return null;
+                                    }
+                                }
+                            });
+
+                    if (null == id) {
+                        // TODO make warn about failed update
+                    }
+
+                } else if (null != photoObject) {
+                    // Delete group and Error or
+                    RetryableException e
+                            = RetryableException.wrap("Invalid attribute value: "
+                            + String.valueOf(photoObject), uid);
+                    e.initCause(new InvalidAttributeValueException(
+                            "Attribute 'photo' must be a single Map value"));
+                    throw e;
+                }
+            }
+
             // aliases
             if (null != attributesAccessor.findStringList(ALIASES_ATTR)) {
                 List<String> aliases = new ArrayList(attributesAccessor.findStringList(ALIASES_ATTR));
@@ -1801,6 +1894,24 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             builder.addAttribute(AttributeBuilder.build(PredefinedAttributes.GROUPS_NAME,
                     listGroups(service, user.getId())));
         }
+
+
+        if(!this.configuration.getProjection().equals("BASIC")){
+            Map<String, Map<String, Object>> customSchemas = user.getCustomSchemas();
+            if (customSchemas != null){
+                for (String schemaName : customSchemas.keySet()){
+                    if(approveScheme(schemaName,configuration)){
+                        for (String fieldName : customSchemas.get(schemaName).keySet()){
+                            builder.addAttribute(AttributeBuilder.build(schemaName+"."+fieldName, customSchemas.get(schemaName).get(fieldName)));
+                        }
+                    }
+                }
+            }
+        }
+
+        /*if (null == attributesToGet || attributesToGet.contains(OFFICE)) {
+            builder.addAttribute(AttributeBuilder.build(OFFICE, user.getCustomSchemas().get("BambooHR_custom_fields").get(OFFICE)));
+        }*/
 
         return builder.build();
     }
