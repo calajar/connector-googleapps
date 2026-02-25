@@ -74,12 +74,15 @@ public class Main {
             "https://www.googleapis.com/auth/admin.directory.user";
     public static final java.lang.String ADMIN_ENTERPRISE_LICENSE =
             "https://www.googleapis.com/auth/apps.licensing";
+    public static final java.lang.String ADMIN_DIRECTORY_SCHEMA =
+            "https://www.googleapis.com/auth/admin.directory.userschema";
     // @formatter:off
     private static final List<String> SCOPES = Arrays.asList(
             ADMIN_DIRECTORY_GROUP,
             ADMIN_DIRECTORY_ORGUNIT,
             ADMIN_DIRECTORY_USER,
-            ADMIN_ENTERPRISE_LICENSE);
+            ADMIN_ENTERPRISE_LICENSE,
+            ADMIN_DIRECTORY_SCHEMA);
     // @formatter:on
     /**
      * Global instance of the HTTP transport.

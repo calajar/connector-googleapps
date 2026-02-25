@@ -24,13 +24,13 @@
 package com.evolveum.polygon.connector.googleapps;
 
 import com.google.api.services.directory.Directory;
-import com.google.api.services.directory.model.Alias;
-import com.google.api.services.directory.model.User;
-import com.google.api.services.directory.model.UserName;
-import com.google.api.services.directory.model.UserPhoto;
+import com.google.api.services.directory.model.*;
+import com.google.api.services.directory.model.Schema;
 import com.google.common.base.CharMatcher;
 import com.google.common.escape.Escaper;
 import com.google.common.escape.Escapers;
+import org.apache.commons.logging.LogFactory;
+import org.checkerframework.checker.units.qual.A;
 import org.identityconnectors.common.CollectionUtil;
 import org.identityconnectors.common.StringUtil;
 import org.identityconnectors.common.logging.Log;
@@ -38,16 +38,14 @@ import org.identityconnectors.common.security.GuardedString;
 import org.identityconnectors.common.security.SecurityUtil;
 import org.identityconnectors.framework.common.exceptions.ConnectorException;
 import org.identityconnectors.framework.common.exceptions.InvalidAttributeValueException;
+import org.identityconnectors.framework.common.exceptions.UnknownUidException;
 import org.identityconnectors.framework.common.objects.*;
 import org.identityconnectors.framework.common.objects.filter.*;
 import org.identityconnectors.framework.common.objects.AttributeInfo.Flags;
 
 import java.io.IOException;
-import java.util.Map;
-import java.util.Set;
-import java.util.EnumSet;
+import java.util.*;
 
-import static com.evolveum.polygon.connector.googleapps.GoogleAppsConnector.ID_ATTR;
 import static com.evolveum.polygon.connector.googleapps.GoogleAppsConnector.PHOTO_ATTR;
 
 /**
@@ -94,10 +92,12 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
     public static final String THUMBNAIL_PHOTO_URL_ATTR = "thumbnailPhotoUrl";
     public static final String DELETION_TIME_ATTR = "deletionTime";
     public static final String LOCATIONS_ATTR = "locations";
+    public static final String PASSWORD_ATTR = "__PASSWORD__";
 
     private static final Map<String, String> NAME_DICTIONARY;
     private static final Set<String> S;
     private static final Set<String> SW;
+    private static final org.apache.commons.logging.Log log = LogFactory.getLog(UserHandler.class);
 
     static {
         Map<String, String> dictionary = CollectionUtil.newCaseInsensitiveMap();
@@ -313,7 +313,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
     // USER https://developers.google.com/admin-sdk/directory/v1/reference/users
     //
     // /////////////
-    public static ObjectClassInfo getUserClassInfo() {
+    public static ObjectClassInfo getUserClassInfo(Schemas schemas, GoogleAppsConfiguration googleAppsConfiguration) {
         // @formatter:off
             /*
          {
@@ -502,6 +502,27 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         builder.addAttributeInfo(AttributeInfoBuilder.define(PHOTO_ATTR, byte[].class)
                 .setReturnedByDefault(false).build());
 
+
+
+        if (schemas != null){
+            List<ArrayList<CustomAttribute>> allSchemas = getCustomSchemaAttributes(schemas,googleAppsConfiguration);
+            if (!allSchemas.isEmpty()){
+                for (ArrayList<CustomAttribute> schema : allSchemas){
+                    for (CustomAttribute attribute : schema){
+                        if (attribute.getType().equals("BOOL")){
+                            builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName()).setType(Boolean.class).setMultiValued(attribute.isMultiValued())
+                                    .build());
+                        } else {
+                            builder.addAttributeInfo(AttributeInfoBuilder.define(attribute.getName())
+                                    .build());
+                        }
+
+                    }
+                }
+            }
+        }
+
+
         /* 
         builder.addAttributeInfo(PredefinedAttributeInfos.GROUPS.setReturnedByDefault(true));
         AttributeInfoBuilder subjectId = new AttributeInfoBuilder();
@@ -521,9 +542,82 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         return builder.build();
     }
 
+    public static List<ArrayList<CustomAttribute>> getCustomSchemaAttributes(Schemas schemas,GoogleAppsConfiguration googleAppsConfiguration){
+
+        ArrayList<ArrayList<CustomAttribute>> customSchemas = new ArrayList<>();
+        List<Schema> schemaList = schemas.getSchemas();
+
+        for (Schema schema : schemaList) {
+            ArrayList<CustomAttribute> customAttributes = new ArrayList<>();
+            String schemaName = schema.getSchemaName();
+            if (!approveScheme(schemaName, googleAppsConfiguration)) {
+                continue;
+            }
+            for (SchemaFieldSpec fieldSpec : schema.getFields()) {
+                customAttributes.add(new CustomAttribute(schemaName+"."+ fieldSpec.getFieldName(),fieldSpec.getFieldType(),fieldSpec.getMultiValued(),schemaName,fieldSpec.getFieldName()));
+            }
+            customSchemas.add(customAttributes);
+        }
+
+        return customSchemas;
+    }
+
+    public static class CustomAttribute {
+        private String name;
+        private String type;
+        private String schemaName;
+        private String fieldName;
+        private boolean multiValued;
+
+        public CustomAttribute(String name, String type, boolean multiValued,String schemaName, String fieldName) {
+            this.name = name;
+            this.type = type;
+            this.multiValued = multiValued;
+            this.schemaName = schemaName;
+            this.fieldName = fieldName;
+        }
+
+        // Getters
+        public String getName() {
+            return name;
+        }
+
+        public String getType() {
+            return type;
+        }
+        public String getSchemaName() {
+            return schemaName;
+        }
+        public String getFieldName() {
+            return fieldName;
+        }
+
+        public boolean isMultiValued() {
+            return multiValued;
+        }
+    }
+
+    public static boolean approveScheme(String schemaName,GoogleAppsConfiguration googleAppsConfiguration){
+        if (googleAppsConfiguration.getProjection().equals("FULL")){
+            return true;
+        }
+        if (!googleAppsConfiguration.getProjection().equals("BASIC")){
+            String[] parts = googleAppsConfiguration.getCustomFieldMask().split(",");
+
+            for (String part : parts) {
+                if (schemaName.equals(part)){
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return false;
+    }
+
     // https://support.google.com/a/answer/33386
     public static Directory.Users.Insert createUser(Directory.Users users,
-            AttributesAccessor attributes) {
+            AttributesAccessor attributes,Schemas schemas,GoogleAppsConfiguration configuration) {
         User user = new User();
         user.setPrimaryEmail(GoogleAppsUtil.getName(attributes.getName()));
         GuardedString password = attributes.getPassword();
@@ -572,6 +666,39 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         user.setIncludeInGlobalAddressList(attributes
                 .findBoolean(INCLUDE_IN_GLOBAL_ADDRESS_LIST_ATTR));
 
+        if (schemas != null){
+            Map<String, Map<String, Object>> customSchemas = new HashMap<>();
+            List<ArrayList<CustomAttribute>> allSchemas = getCustomSchemaAttributes(schemas,configuration);
+            if (!allSchemas.isEmpty()){
+                for (ArrayList<CustomAttribute> customAttributes : allSchemas){
+                    String schemaName = null;
+                    Map<String, Object> customAttr = new HashMap<>();
+                    for (CustomAttribute attribute : customAttributes){
+                        Attribute schemaAttr = attributes.find(attribute.getName());
+                        if (schemaAttr != null) {
+                            schemaName = attribute.schemaName;
+                            if (!attribute.multiValued){
+                                if (schemaAttr.getValue()== null){
+                                    customAttr.put(attribute.fieldName,null);
+                                } else {
+                                    customAttr.put(attribute.fieldName,schemaAttr.getValue().get(0));
+                                }
+                            } else {
+                                customAttr.put(attribute.fieldName,schemaAttr.getValue().toString());
+                            }
+
+                        }
+                    }
+                    if (!customAttr.isEmpty()){
+                        customSchemas.put(schemaName,customAttr);
+                    }
+                }
+                if (!customSchemas.isEmpty()){
+                    user.setCustomSchemas(customSchemas);
+                }
+            }
+        }
+
         try {
             return users.insert(user).setFields(ID_ETAG);
             // } catch (HttpResponseException e){
@@ -581,8 +708,132 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
         }
     }
 
+    public static void updateDeltaAccount(GoogleAppsConnector connector, Uid uid, Set<AttributeDelta> modifications, OperationOptions options) {
+        Set<AttributeInfo> usersInfo = connector.getUserClass().getAttributeInfo();
+        Set<String> activeGroups = connector.listGroups(connector.configuration.getDirectory().groups(), uid.getUidValue());
+        Set<Attribute> replaceAttributes = getUserAttributesFromDelta(connector.configuration.getDirectory().users(), uid,
+                usersInfo, activeGroups, modifications);
+        connector.update(ObjectClass.ACCOUNT, uid, replaceAttributes, options);
+    }
+
+    public static Set<Attribute> getUserAttributesFromDelta(Directory.Users users, Uid uid,
+            Set<AttributeInfo> userAttrInfo, Set<String> userGroups, Set<AttributeDelta> modifications) {
+        Set<Attribute> replaceAttributes = new HashSet<>();
+        User user = null;
+        try {
+            user = users.get(uid.getUidValue()).execute();
+        } catch (IOException e) {
+            logger.warn(e, "User with uid " + uid.getUidValue() + " not found.");
+            throw UnknownUidException.wrap(e);
+        }
+
+        for (AttributeDelta attributeDelta : modifications) {
+
+            String attrName = attributeDelta.getName();
+            List<Object> addDelta = attributeDelta.getValuesToAdd();
+            List<Object> deleteDelta = attributeDelta.getValuesToRemove();
+            List<Object> replaceDelta = attributeDelta.getValuesToReplace();
+
+            if (replaceDelta != null) {
+                // single value attrs
+                Optional<AttributeInfo> attrInfo = userAttrInfo.stream()
+                        .filter(attrI -> attrI.is(attrName))
+                        .findFirst();
+
+                if (attrInfo.isPresent()) {
+                    if (attrInfo.get().isMultiValued()) {
+                        throw new InvalidAttributeValueException("Multivalue attribute in values to replace.");
+                    }
+                }
+
+                for (Object value : replaceDelta) {
+                    Attribute newAttribute = AttributeBuilder.build(attrName, value);
+                    replaceAttributes.add(newAttribute);
+                }
+            } else {
+                // multi value attrs
+                switch (attrName) {
+                    case IMS_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getIms());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case EMAILS_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getEmails());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case EXTERNAL_IDS_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getExternalIds());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case RELATIONS_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getRelations());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case ADDRESSES_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getAddresses());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case ORGANIZATIONS_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getOrganizations());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case PHONES_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getPhones());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case LOCATIONS_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getLocations());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case ALIASES_ATTR: {
+                        Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString((Collection) user.getAliases());
+                        replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                        break;
+                    }
+                    case PASSWORD_ATTR: {
+                        if (deleteDelta != null && !deleteDelta.isEmpty() && deleteDelta.get(0) == user.getPassword()) {
+                            for (Object value : addDelta) {
+                                Attribute newAttribute = AttributeBuilder.build(PASSWORD_ATTR, value);
+                                replaceAttributes.add(newAttribute);
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (attrName.equals(PredefinedAttributes.GROUPS_NAME)) {
+                    Collection currentValues = (Collection) GoogleAppsUtil.structAttrToString(userGroups);
+                    replaceAttributes.add(getModifiedAttribute(attrName, currentValues, addDelta, deleteDelta));
+                }
+            }
+        }
+        return replaceAttributes;
+    }
+
+    private static Attribute getModifiedAttribute(String attrName, Collection currentValues, List<Object> addDelta, List<Object> deleteDelta) {
+        if ((addDelta != null || deleteDelta != null) && currentValues == null) {
+            currentValues = new ArrayList();
+        }
+        if (addDelta != null) {
+            currentValues.addAll(addDelta);
+        }
+        if (deleteDelta != null) {
+            currentValues.removeAll(deleteDelta);
+        }
+
+        Attribute newAttribute = AttributeBuilder.build(attrName, currentValues);
+        return newAttribute;
+    }
+
     public static Directory.Users.Patch updateUser(Directory.Users users, Uid uid,
-            AttributesAccessor attributes) {
+            AttributesAccessor attributes,Schemas schemas,GoogleAppsConfiguration configuration) {
         User content = null;
 
         Name email = attributes.getName();
@@ -684,6 +935,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
             content.setExternalIds(GoogleAppsUtil.getStructAttr(externalIds));
         }
 
+
         Attribute relations = attributes.find(RELATIONS_ATTR);
         if (null != relations) {
             if (null == content) {
@@ -747,6 +999,42 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
             }
         }
 
+        if (schemas != null){
+            Map<String, Map<String, Object>> customSchemas = new HashMap<>();
+            List<ArrayList<CustomAttribute>> allSchemas = getCustomSchemaAttributes(schemas,configuration);
+            if (!allSchemas.isEmpty()){
+                for (ArrayList<CustomAttribute> customAttributes : allSchemas){
+                    String schemaName = null;
+                    Map<String, Object> customAttr = new HashMap<>();
+                    for (CustomAttribute attribute : customAttributes){
+                        Attribute schemaAttr = attributes.find(attribute.getName());
+                        if (schemaAttr != null) {
+                            if (null == content) {
+                                content = new User();
+                            }
+                            schemaName = attribute.schemaName;
+                            if (!attribute.multiValued){
+                                if (schemaAttr.getValue()== null){
+                                    customAttr.put(attribute.fieldName,null);
+                                } else {
+                                    customAttr.put(attribute.fieldName,schemaAttr.getValue().get(0));
+                                }
+                            } else {
+                                customAttr.put(attribute.fieldName,schemaAttr.getValue().toString());
+                            }
+
+                        }
+                    }
+                    if (!customAttr.isEmpty()){
+                        customSchemas.put(schemaName,customAttr);
+                    }
+                }
+                if (!customSchemas.isEmpty()){
+                    content.setCustomSchemas(customSchemas);
+                }
+            }
+        }
+
         if (null == content) {
             return null;
         }
@@ -777,7 +1065,9 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
          */
         // @formatter:on
         try {
-            return service.update(userKey, content).setFields(ID_ATTR);
+            /*Directory.Users.Photos.Update update = service.update(userKey, content).setFields(ID_ATTR);*/
+            Directory.Users.Photos.Update update = service.update(userKey, content);
+            return update;
             // } catch (HttpResponseException e){
         } catch (IOException e) {
             logger.warn(e, "Failed to initialize Aliases#Insert");

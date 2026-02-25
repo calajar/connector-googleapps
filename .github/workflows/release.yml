@@ -1,0 +1,60 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*.*' # Triggers on any tag push
+
+jobs:
+  build:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Get Maven Project Version
+        id: get_version
+        run: echo "VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_ENV
+
+      - name: Build project
+        run: mvn --batch-mode clean install -DskipTests=true
+
+      - name: Upload Connector
+        uses: actions/upload-artifact@v4
+        with:
+          name: Midpoint to Midpoint Connector
+          path: ./target/connector-googleapps-${{ env.VERSION }}.jar
+
+      - name: Extract Latest Changelog Entry
+        id: changelog
+        run: |
+          awk '/^## \[/{if (p) exit; p=1} p' CHANGELOG.md > latest_changelog.md
+          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
+          cat latest_changelog.md >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Extract Tag Name
+        id: tag_name
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          name: Release ${{ env.TAG_NAME }}
+          body: ${{ env.CHANGELOG }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./target/connector-googleapps-${{ env.VERSION }}.jar
