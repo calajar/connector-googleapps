@@ -35,18 +35,18 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.evolveum.polygon</groupId>
     <artifactId>connector-googleapps</artifactId>
-    <version>1.5.0.1</version>
+	<version>1.5.0.5-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>GoogleApps Connector</name>
 
     <properties>
+		<project.source.version>21</project.source.version>
         <connectorPackage>com.evolveum.polygon.connector.googleapps</connectorPackage>
         <connectorClass>GoogleAppsConnector</connectorClass>
-        <framework.compatibilityVersion>1.4</framework.compatibilityVersion>
-        <framework.releaseVersion>1.0</framework.releaseVersion>
+		<framework.compatibilityVersion>1.5</framework.compatibilityVersion>
+		<framework.releaseVersion>1.5</framework.releaseVersion>
     </properties>
 
     <repositories>
@@ -106,25 +106,45 @@
         <dependency>
             <groupId>com.google.apis</groupId>
             <artifactId>google-api-services-admin-directory</artifactId>
-            <version>directory_v1-rev20230516-2.0.0</version>
+			<version>directory_v1-rev20260522-2.0.0</version>
+			<!--<version>directory_v1-rev20250325-2.0.0</version>-->
+			<!--<version>directory_v1-rev20240709-2.0.0</version>-->
         </dependency>
 
         <dependency>
             <groupId>com.google.apis</groupId>
             <artifactId>google-api-services-licensing</artifactId>
-            <version>v1-rev20220430-2.0.0</version>
+			<version>v1-rev20251108-2.0.0</version>
+            <!--<version>v1-rev20220430-2.0.0</version>-->
         </dependency>
 
         <dependency>
             <groupId>com.google.auth</groupId>
             <artifactId>google-auth-library-oauth2-http</artifactId>
-            <version>1.19.0</version>
+            <version>1.47.0</version>
         </dependency>
 
         <dependency>
             <groupId>joda-time</groupId>
             <artifactId>joda-time</artifactId>
-            <version>2.12.5</version>
+			<version>2.14.2</version>
+		</dependency>
+
+
+		<!--<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-pubsub</artifactId>
+			<version>v1-rev20240730-2.0.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.cloud</groupId>
+			<artifactId>google-cloud-pubsub</artifactId>
+			<version>1.132.1</version>
+		</dependency>-->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-reseller</artifactId>
+			<version>v1-rev20250511-2.0.0</version>
         </dependency>
 
         <!--
@@ -133,8 +153,19 @@
         <dependency>
             <groupId>com.google.oauth-client</groupId>
             <artifactId>google-oauth-client-jetty</artifactId>
-            <version>1.34.1</version>
+			<version>1.39.0</version>
         </dependency>
 
     </dependencies>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.google.cloud</groupId>
+				<artifactId>libraries-bom</artifactId>
+				<version>26.83.0</version>
+				<type>pom</type>
+				<scope>import</scope>
+        	</dependency>
+    	</dependencies>
+	</dependencyManagement>
 </project>

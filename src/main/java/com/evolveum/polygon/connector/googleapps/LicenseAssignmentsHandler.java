@@ -159,7 +159,9 @@ public class LicenseAssignmentsHandler {
     }
 
     public static final Pattern LICENSE_NAME_PATTERN =
-            Pattern.compile("(?i)(Google-Coordinate|Google-Drive-storage|Google-Vault)\\/sku\\/(Google-Coordinate|Google-Drive-storage-20GB|Google-Drive-storage-50GB|Google-Drive-storage-200GB|Google-Drive-storage-400GB|Google-Drive-storage-1TB|Google-Drive-storage-2TB|Google-Drive-storage-4TB|Google-Drive-storage-8TB|Google-Drive-storage-16TB|Google-Vault)\\/user\\/(.+)");
+		Pattern.compile("(?i)([^\\/]+)\\/sku\\/([^\\/]+)\\/user\\/(.+)");
+
+	public static final String PRODUCT_ID_SKU_ID_SEPARATOR = ";";
 
     public static Licensing.LicenseAssignments.Patch updateLicenseAssignment(
             Licensing.LicenseAssignments service, String groupKey, AttributesAccessor attributes) {

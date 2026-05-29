@@ -27,6 +27,7 @@ public class ConnectorObjectsCache {
     private final Log logger;
     private final Map<String, ConnectorObjectWrapper> usersMap;
     private final Map<String, ConnectorObjectWrapper> groupsMap;
+	private final Map<String, ConnectorObjectWrapper> licensesMap;
 
     private boolean allowCache;
     private Duration maxCacheTTL;
@@ -35,6 +36,7 @@ public class ConnectorObjectsCache {
     private ConnectorObjectsCache(GoogleAppsConfiguration configuration, Log connectorLogger) {
         usersMap = new HashMap<>();
         groupsMap = new HashMap<>();
+		licensesMap = new HashMap<>();
         logger = connectorLogger;
 
         configure(configuration);
@@ -107,6 +109,26 @@ public class ConnectorObjectsCache {
     public void markGroupAsUpdatedNow(String uid) {
         markObjectAsUpdatedNow(uid, ObjectType.GROUP);
     }
+
+	/**
+	 * Returns the user from cache or null if there is none (or expired).
+	 */
+	@Nullable
+	public ConnectorObject getLicense(String uid) {
+		return getObject(uid, ObjectType.LICENSE);
+	}
+
+	public void removeLicense(String uid) {
+		removeObject(uid, ObjectType.LICENSE);
+	}
+
+	public void addLicense(ConnectorObject user) {
+		addObject(user, ObjectType.LICENSE);
+	}
+
+	public void markLicenseAsUpdatedNow(String uid) {
+		markObjectAsUpdatedNow(uid, ObjectType.LICENSE);
+	}
 
     @Nullable
     private ConnectorObject getObject(String uid, ObjectType type) {
@@ -192,6 +214,8 @@ public class ConnectorObjectsCache {
                 return usersMap;
             case GROUP:
                 return groupsMap;
+			case LICENSE:
+				return licensesMap;
             default:
                 throw new IllegalArgumentException("Cache.getMap() - unknown object type: " + objectType);
         }
@@ -202,6 +226,7 @@ public class ConnectorObjectsCache {
      */
     private enum ObjectType {
         USER,
-        GROUP
+        GROUP,
+		LICENSE
     }
 }

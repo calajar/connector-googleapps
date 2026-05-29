@@ -23,15 +23,16 @@
  */
 package com.evolveum.polygon.connector.googleapps;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
 
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
@@ -39,15 +40,28 @@ import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.MemoryDataStoreFactory;
+import com.google.api.services.directory.Directory;
+import com.google.api.services.directory.DirectoryScopes;
+import com.google.api.services.directory.model.Users;
+import com.google.api.services.licensing.Licensing;
+import com.google.api.services.licensing.LicensingScopes;
+import com.google.api.services.licensing.model.LicenseAssignmentList;
+import com.google.auth.http.HttpCredentialsAdapter;
+import com.google.auth.http.HttpTransportFactory;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.gson.JsonObject;
-import java.io.FileWriter;
-import java.io.Writer;
-import java.io.PrintStream;
+//import com.google.pubsub.v1.Subscription;
+//import com.google.pubsub.v1.SubscriptionOrBuilder;
+//import org.apache.http.auth.AuthScope;
+
+//import com.google.cloud.pubsub.v1.SubscriptionAdminClient;
 
 import java.util.Scanner;
 
@@ -104,6 +118,7 @@ public class Main {
         }
         HTTP_TRANSPORT = t;
     }
+
     /**
      * Global instance of the JSON factory.
      */
@@ -143,6 +158,58 @@ public class Main {
         out.println("Add these credentials into configuration fields in Google Apps Connector. See readme.txt.");
         out.println("-------------------------------------------------------------------------------------------");
         out.println("");
+		testCreateCredentials();
+	}
+
+	public static void testCreateCredentials() throws Exception {
+		String service_account_json = "/home/jerry/work/dpdc/projekty/dpdc/midpoint/midpoint/doc/google-apps.json";
+		GoogleCredentials sac;
+
+		InputStream inputStream = Files.newInputStream(new File(service_account_json).toPath());
+		//JsonReader.setLenient(true);
+		sac = ServiceAccountCredentials.fromStream(inputStream).createDelegated("idm@dpdc.cz").createScoped(DirectoryScopes.ADMIN_DIRECTORY_USER,
+				DirectoryScopes.ADMIN_DIRECTORY_GROUP,
+				LicensingScopes.APPS_LICENSING,
+				DirectoryScopes.ADMIN_DIRECTORY_USERSCHEMA_READONLY);
+		/*sac = ServiceAccountCredentials.fromStream(inputStream)
+			.createScoped(DirectoryScopes.ADMIN_DIRECTORY_USER,
+				DirectoryScopes.ADMIN_DIRECTORY_GROUP,
+				DirectoryScopes.ADMIN_DIRECTORY_GROUP,
+				LicensingScopes.APPS_LICENSING,
+				DirectoryScopes.ADMIN_DIRECTORY_USERSCHEMA_READONLY)
+			.createDelegated("idm@dpdc.cz")*/
+		sac.refresh();
+		System.out.println("Token expiration time === " + sac.getAccessToken().getExpirationTime());
+		//new Licensing.Builder(new HttpTransportFactory().create(), JSON_FACTORY, new HttpRequestInitializer())
+		HttpRequestInitializer requestInitializer = new HttpCredentialsAdapter(sac);
+		Licensing licensing = new Licensing.Builder(HTTP_TRANSPORT, JSON_FACTORY, requestInitializer)
+			.setApplicationName("GoogleAppsConnector").build();
+
+		//Directory.Customers.build()
+		Directory directory =  new Directory.Builder(HTTP_TRANSPORT, JSON_FACTORY, requestInitializer)
+				.setApplicationName("GoogleAppsConnector").build();
+		Licensing.LicenseAssignments.ListForProduct la = licensing.licenseAssignments().listForProduct("Google-Apps", "C02o5r0sz");
+		//Directory.Customers.Get customers =
+		Directory.Users.List ul = directory.users().list();
+		LicenseAssignmentList ll = la.execute();
+		ul.setCustomer("C02o5r0sz");
+		ul.setProjection("FULL");
+		Users u = ul.execute();
+
+		//SubscriptionAdminClient suba = SubscriptionAdminClient.create();
+		//licensing.licenseAssignments().get("101005", "1010050001", "")
+		//licensing.licenseAssignments().get()
+
+	}
+
+	public static void generateCredentials() throws Exception {
+        System.out.println("-------------------------------------------------------------------------------------------");
+        System.out.println("Generate credentials for GoogleApps Connector");
+        System.out.println("-------------------------------------------------------------------------------------------");
+        System.out.println("You have to created and registered App in Google API and Google API enabled.");
+        System.out.println("Add these credentials into configuration fields in Google Apps Connector. See readme.txt.");
+        System.out.println("-------------------------------------------------------------------------------------------");
+        System.out.println("");
         String clientId;
         String clientSecret;
         Writer fileWriter = writerFactory.open(file);

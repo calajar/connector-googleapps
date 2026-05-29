@@ -136,14 +136,16 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
     public static final String TYPE_ATTR = "type";
     public static final String PRODUCT_ID_SKU_ID_USER_ID = "productId,skuId,userId";
     public static final String PHOTO_ATTR = "__PHOTO__";
+	public static final String GROUPS_ATTR = "groups";
     public static final String LOCATIONS_ATTR = "locations";
+    public static final String OFFICE = "Office";
 
     /**
      * Place holder for the {@link Configuration} passed into the init() method
      * {@link GoogleAppsConnector#init(org.identityconnectors.framework.spi.Configuration)}
      * .
      */
-    GoogleAppsConfiguration configuration;
+    private GoogleAppsConfiguration configuration;
     private ConnectorObjectsCache objectsCache;
     private Schema schema = null;
 
@@ -473,7 +475,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                 }
             } else if (ORG_UNIT.equals(objectClass)) {
                 request
-                        = configuration.getDirectory().orgunits().delete(MY_CUSTOMER_ID, uid.getUidValue());
+					= configuration.getDirectory().orgunits().delete(configuration.getCustomerId(), uid.getUidValue());
+                        //= configuration.getDirectory().orgunits().delete(MY_CUSTOMER_ID, uid.getUidValue());
             } else if (LICENSE_ASSIGNMENT.equals(objectClass)) {
                 request
                         = deleteLicenseAssignment(configuration.getLicensing().licenseAssignments(),
@@ -506,6 +509,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             objectsCache.removeUser(uid.getUidValue());
         } else if (ObjectClass.GROUP.equals(objectClass)) {
             objectsCache.removeGroup(uid.getUidValue());
+        } else if (LICENSE_ASSIGNMENT.equals(objectClass)) {
+			objectsCache.removeLicense(uid.getUidValue());
         }
     }
 
@@ -639,10 +644,15 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             if (!name.matches()) {
                 return;
             }
+			ConnectorObject cachedLicense = objectsCache.getLicense(uid.getUidValue());
+			if (cachedLicense != null) {
+				handler.handle(cachedLicense);
+				return;
+			}
 
-            String productId = name.group(0);
-            String skuId = name.group(1);
-            String userId = name.group(2);
+            String productId = name.group(1);
+            String skuId = name.group(2);
+            String userId = name.group(3);
 
             Licensing.LicenseAssignments.Get request
                     = configuration.getLicensing().licenseAssignments().get(productId, skuId,
@@ -653,6 +663,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                         public Boolean handleResult(
                                 Licensing.LicenseAssignments.Get request,
                                 LicenseAssignment value) {
+							objectsCache.addLicense(fromLicenseAssignment(value));
                             return handler.handle(fromLicenseAssignment(value));
                         }
 
@@ -671,10 +682,22 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
     private void executeLicenseAssignmentSearchQuery(final ResultsHandler handler, OperationOptions options) {
         try {
 
-            String productId = "";
-            String skuId = "";
+            String productId = configuration.getProductId();
+            String skuId = configuration.getSkuId();
+			String[] licenseList = configuration.getLicenseList();
 
+			if (licenseList == null || licenseList.length == 0) {
+				licenseList = new String[1];
+				licenseList[0] = productId + PRODUCT_ID_SKU_ID_SEPARATOR + skuId;
+			}
+
+			for (int i = 0; i < licenseList.length; i++) {
             boolean paged = false;
+
+				String[] tmp = licenseList[i].split(PRODUCT_ID_SKU_ID_SEPARATOR);
+
+				productId = tmp[0];
+				if (tmp.length == 2) skuId = tmp[1]; else skuId = null;
 
             LicensingRequest<LicenseAssignmentList> request = null;
 
@@ -684,7 +707,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             } else if (StringUtil.isBlank(skuId)) {
                 Licensing.LicenseAssignments.ListForProduct r
                         = configuration.getLicensing().licenseAssignments().listForProduct(
-                        productId, MY_CUSTOMER_ID);
+						productId, configuration.getCustomerId());
+					//productId, MY_CUSTOMER_ID);
 
                 if (options.getPageSize() != null && 0 < options.getPageSize()) {
                     r.setMaxResults(Long.valueOf(options.getPageSize()));
@@ -695,7 +719,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             } else {
                 Licensing.LicenseAssignments.ListForProductAndSku r
                         = configuration.getLicensing().licenseAssignments()
-                        .listForProductAndSku(productId, skuId, MY_CUSTOMER_ID);
+						.listForProductAndSku(productId, skuId, configuration.getCustomerId());
+					//.listForProductAndSku(productId, skuId, MY_CUSTOMER_ID);
 
                 if (options.getPageSize() != null && 0 < options.getPageSize()) {
                     r.setMaxResults(Long.valueOf(options.getPageSize()));
@@ -719,7 +744,9 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                                 if (null != value.getItems()) {
                                     for (LicenseAssignment resource : value
                                             .getItems()) {
-                                        handler.handle(fromLicenseAssignment(resource));
+										ConnectorObject co = fromLicenseAssignment(resource);
+										objectsCache.addLicense(co); // fetching license during login operation (if a projection is connected to a user) takes too long, that's why add to cache during query/reconciliation
+                                        handler.handle(co);
                                     }
                                 }
                                 return value.getNextPageToken();
@@ -737,9 +764,9 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                 ((SearchResultsHandler) handler).handleResult(new SearchResult(
                         nextPageToken, 0));
             }
-
+			}
         } catch (IOException e) {
-            logger.warn(e, "Failed to initialize Groups#List");
+            logger.warn(e, "Failed to initialize License#List");
             throw ConnectorException.wrap(e);
         }
     }
@@ -747,7 +774,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
     private void executeOrgUnitReadQuery(Uid uid, final ResultsHandler handler, OperationOptions options, final Set<String> attributesToGet) {
         try {
             Directory.Orgunits.Get request
-                    = configuration.getDirectory().orgunits().get(MY_CUSTOMER_ID, uid.getUidValue());
+				= configuration.getDirectory().orgunits().get(configuration.getCustomerId(), uid.getUidValue());
+                    //= configuration.getDirectory().orgunits().get(MY_CUSTOMER_ID, uid.getUidValue());
             request.setFields(getFields(options, ORG_UNIT_PATH_ATTR, ETAG_ATTR, NAME_ATTR));
 
             execute(request,
@@ -772,7 +800,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
     private void executeOrgUnitSearchQuery(Filter query, final ResultsHandler handler, OperationOptions options, final Set<String> attributesToGet) {
         try {
             Directory.Orgunits.List request
-                    = configuration.getDirectory().orgunits().list(MY_CUSTOMER_ID);
+				= configuration.getDirectory().orgunits().list(configuration.getCustomerId());
+                    //= configuration.getDirectory().orgunits().list(MY_CUSTOMER_ID);
             if (null != query) {
                 if (query instanceof StartsWithFilter
                         && AttributeUtil.namesEqual(ORG_UNIT_PATH_ATTR,
@@ -957,7 +986,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             if (null != query) {
                 query.accept(new GroupHandler(), request);
             } else {
-                request.setCustomer(MY_CUSTOMER_ID);
+				request.setCustomer(configuration.getCustomerId());
+                //request.setCustomer(MY_CUSTOMER_ID);
             }
 
             boolean paged = false;
@@ -967,6 +997,9 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                 paged = true;
             }
             request.setPageToken(options.getPagedResultsCookie());
+
+			// needs to be set otherwise api uses domain = "global" which does not work in my case
+			request.setDomain(configuration.getDomain());
 
             // Implementation to support the 'OP_ATTRIBUTES_TO_GET'
             String fields = getFields(options, ID_ATTR, ETAG_ATTR, EMAIL_ATTR);
@@ -1087,10 +1120,12 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                     request.setQuery(queryString);
                 }
                 if (null == request.getDomain() && null == request.getCustomer()) {
-                    request.setCustomer(MY_CUSTOMER_ID);
+					request.setCustomer(configuration.getCustomerId());
+                    //request.setCustomer(MY_CUSTOMER_ID);
                 }
             } else {
-                request.setCustomer(MY_CUSTOMER_ID);
+				request.setCustomer(configuration.getCustomerId());
+                //request.setCustomer(MY_CUSTOMER_ID);
             }
 
             // Implementation to support the 'OP_PAGE_SIZE'
@@ -1163,9 +1198,9 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                                     final Users value) {
                                 if (null != value.getUsers()) {
                                     for (User user : value.getUsers()) {
-                                        handler.handle(fromUser(user,
-                                                attributesToGet, configuration
-                                                        .getDirectory().groups()));
+										ConnectorObject u = fromUser(user, attributesToGet, configuration.getDirectory().groups());
+										//objectsCache.addUser(u);
+                                        handler.handle(u);
                                     }
                                 }
                                 return value.getNextPageToken();
@@ -1221,8 +1256,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                     attributesToGet.add(attribute.substring(0, l));
                 }
             }
-            attributesToGet.add(PHOTO_ATTR);
         }
+            attributesToGet.add(PHOTO_ATTR);
         return attributesToGet;
     }
 
@@ -1307,7 +1342,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                     attributes.add("name/givenName");
                 } else if (AttributeUtil.namesEqual(FULL_NAME_ATTR, attribute)) {
                     attributes.add("name/fullName");
-                } else {
+                } else if (!AttributeUtil.namesEqual(GROUPS_ATTR, attribute)) {
                     attributes.add(attribute);
                 }
             }
@@ -1366,6 +1401,7 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             if (!this.configuration.getProjection().equals("BASIC")){
                 schemas= executeUserSchema(this.configuration.getCustomerId());
             }
+
 
             final Directory.Users.Patch patch
                     = updateUser(configuration.getDirectory().users(), uid,
@@ -1765,6 +1801,8 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
             objectsCache.markUserAsUpdatedNow(uidAfterUpdate.getUidValue());
         } else if (ObjectClass.GROUP.equals(objectClass)) {
             objectsCache.markGroupAsUpdatedNow(uidAfterUpdate.getUidValue());
+        } else if (LICENSE_ASSIGNMENT.equals(objectClass)) {
+			objectsCache.markLicenseAsUpdatedNow(uidAfterUpdate.getUidValue());
         }
         return uidAfterUpdate;
     }
@@ -2069,10 +2107,16 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
 
             Directory.Groups.List request = service.list();
             request.setUserKey(userKey);
-            request.setFields("groups/email");
+            //request.setFields("groups/email");
+			//request.setFields()
+			//request.setFields("email");
             //400 Bad Request if the Customer(my_customer or exact value) is set, only domain-userKey combination allowed.
             //request.setCustomer(MY_CUSTOMER_ID);
-            request.setDomain(configuration.getDomain());
+
+            //request.setDomain(configuration.getDomain());
+
+			// changed to customer id === !!! customer is not a part of group request
+			//request.setCustomer(configuration.getCustomerId());
 
             String nextPageToken = null;
             do {
@@ -2087,10 +2131,12 @@ public class GoogleAppsConnector implements Connector, CreateOp, DeleteOp, Schem
                                 if (null != value.getGroups()) {
                                     for (Group group : value.getGroups()) {
                                         GoogleAppsConfiguration GAconf = (GoogleAppsConfiguration) getConfiguration();
-                                        String domain = GAconf.getDomain();
+
+										result.add(group.getEmail());
+                                        /*String domain = GAconf.getDomain();
                                         if (group.getEmail().endsWith(domain)) {//TODO fix loading crossdomain groups for users
                                             result.add(group.getEmail());
-                                        }
+                                        }*/
                                     }
                                 }
                                 return value.getNextPageToken();

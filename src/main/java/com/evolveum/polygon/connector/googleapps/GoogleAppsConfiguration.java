@@ -69,6 +69,7 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
     private String projection = "BASIC";
     private String customFieldMask = null;
     private String customerId = null;
+	private String[] licenseList = null;
 
     /**
      * Client identifier issued to the client during the registration process.
@@ -99,7 +100,7 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
     }
 
     @ConfigurationProperty(order = 1, displayMessageKey = "domain.display",
-    groupMessageKey = "basic.group", helpMessageKey = "domain.help", required = true,
+		groupMessageKey = "basic.group", helpMessageKey = "domain.help", required = false,
     confidential = false)
     public String getDomain() {
         return domain;
@@ -230,14 +231,25 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
         this.ignoreCacheAfterUpdateTTL = ignoreCacheAfterUpdateTTL;
     }
 
+	@ConfigurationProperty(order = 13, displayMessageKey = "licenseList.display",
+		groupMessageKey = "basic.group", helpMessageKey = "licenseList.help", required = false,
+		confidential = false)
+	public String[] getLicenseList() {
+		return licenseList;
+	}
+
+	public void setLicenseList(String[] licenseList) {
+		this.licenseList = licenseList;
+	}
+
 
     /**
      * {@inheritDoc}
      */
     public void validate() {
-        if (StringUtil.isBlank(domain)) {
+		/*if (StringUtil.isBlank(domain)) {
             throw new IllegalArgumentException("Domain cannot be null or empty.");
-        }
+		}*/
         if (StringUtil.isBlank(productId)) {
             throw new IllegalArgumentException("Product ID cannot be null or empty.");
         }
@@ -255,7 +267,9 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
         if (null == credentials) {
             synchronized (this) {
                 if (null == credentials) {
-                    System.setProperty("https.protocols", "TLSv1.2");
+
+					// not needed
+					//System.setProperty("https.protocols", "TLSv1.2");
 
                     if (getClientSecret() != null) {
                         // Using OAuth 2.0 client with authorization code flow
@@ -271,9 +285,17 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
                         getServiceAccountKeyJson().access(c -> {
                             String keyJson = String.valueOf(c);
                             try (InputStream inputStream = new ByteArrayInputStream(keyJson.getBytes(StandardCharsets.UTF_8))) {
-                                credentials = ServiceAccountCredentials.fromStream(inputStream, () -> HTTP_TRANSPORT)
+
+								// http transport does not need to be set - the class ServiceAccountCredentials set its own as default
+								/*credentials = ServiceAccountCredentials.fromStream(inputStream, () -> HTTP_TRANSPORT)
                                         .createScoped(DirectoryScopes.ADMIN_DIRECTORY_USER,
                                                 DirectoryScopes.ADMIN_DIRECTORY_GROUP,
+                                                DirectoryScopes.ADMIN_DIRECTORY_GROUP,
+                                                LicensingScopes.APPS_LICENSING,
+                                                DirectoryScopes.ADMIN_DIRECTORY_USERSCHEMA_READONLY)
+									.createDelegated(getServiceAccountUser());*/
+								credentials = ServiceAccountCredentials.fromStream(inputStream)
+                                        .createScoped(DirectoryScopes.ADMIN_DIRECTORY_USER,
                                                 DirectoryScopes.ADMIN_DIRECTORY_GROUP,
                                                 LicensingScopes.APPS_LICENSING,
                                                 DirectoryScopes.ADMIN_DIRECTORY_USERSCHEMA_READONLY)
@@ -288,6 +310,7 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
                         credentials.refresh();
                     } catch (IOException ex) {
                         logger.error("Token refresh error: {0}", ex.getMessage());
+						throw new ConnectorException(ex.getMessage());
                     }
 
                     HttpRequestInitializer requestInitializer = new HttpCredentialsAdapter(credentials);
@@ -306,6 +329,7 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
     @Override
     public void release() {
     }
+
     /**
      * Global instance of the HTTP transport.
      */
@@ -327,6 +351,7 @@ public class GoogleAppsConfiguration extends AbstractConfiguration implements St
         }
         return licensing;
     }
+
     private Directory directory;
     private Licensing licensing;
 

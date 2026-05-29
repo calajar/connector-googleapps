@@ -282,7 +282,7 @@ public class GroupHandler implements FilterVisitor<Void, Directory.Groups.List> 
 
     public static void updateDeltaGroup(GoogleAppsConnector connector, Uid uid, Set<AttributeDelta> modifications, OperationOptions options) {
         Set<AttributeInfo> groupsInfo = getGroupClassInfo().getAttributeInfo();
-        List<String> activeMembership = connector.listMembers(connector.configuration.getDirectory().members(), uid.getUidValue(), null);
+        List<String> activeMembership = connector.listMembers(((GoogleAppsConfiguration)connector.getConfiguration()).getDirectory().members(), uid.getUidValue(), null);
         Set<Attribute> replaceAttributes = getGroupAttributesFromDelta(groupsInfo, activeMembership, modifications);
         connector.update(ObjectClass.GROUP, uid, replaceAttributes, options);
     }

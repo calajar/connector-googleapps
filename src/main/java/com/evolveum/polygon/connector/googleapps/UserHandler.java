@@ -30,7 +30,7 @@ import com.google.common.base.CharMatcher;
 import com.google.common.escape.Escaper;
 import com.google.common.escape.Escapers;
 import org.apache.commons.logging.LogFactory;
-import org.checkerframework.checker.units.qual.A;
+//import org.checkerframework.checker.units.qual.A;
 import org.identityconnectors.common.CollectionUtil;
 import org.identityconnectors.common.StringUtil;
 import org.identityconnectors.common.logging.Log;
@@ -46,6 +46,7 @@ import org.identityconnectors.framework.common.objects.AttributeInfo.Flags;
 import java.io.IOException;
 import java.util.*;
 
+import static com.evolveum.polygon.connector.googleapps.GoogleAppsConnector.ID_ATTR;
 import static com.evolveum.polygon.connector.googleapps.GoogleAppsConnector.PHOTO_ATTR;
 
 /**
@@ -92,6 +93,7 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
     public static final String THUMBNAIL_PHOTO_URL_ATTR = "thumbnailPhotoUrl";
     public static final String DELETION_TIME_ATTR = "deletionTime";
     public static final String LOCATIONS_ATTR = "locations";
+	public static final String OFFICE = "Office";
     public static final String PASSWORD_ATTR = "__PASSWORD__";
 
     private static final Map<String, String> NAME_DICTIONARY;
@@ -713,8 +715,8 @@ public class UserHandler implements FilterVisitor<StringBuilder, Directory.Users
 
     public static void updateDeltaAccount(GoogleAppsConnector connector, Uid uid, Set<AttributeDelta> modifications, OperationOptions options) {
         Set<AttributeInfo> usersInfo = connector.getUserClass().getAttributeInfo();
-        Set<String> activeGroups = connector.listGroups(connector.configuration.getDirectory().groups(), uid.getUidValue());
-        Set<Attribute> replaceAttributes = getUserAttributesFromDelta(connector.configuration.getDirectory().users(), uid,
+        Set<String> activeGroups = connector.listGroups(((GoogleAppsConfiguration)connector.getConfiguration()).getDirectory().groups(), uid.getUidValue());
+        Set<Attribute> replaceAttributes = getUserAttributesFromDelta(((GoogleAppsConfiguration)connector.getConfiguration()).getDirectory().users(), uid,
                 usersInfo, activeGroups, modifications);
         connector.update(ObjectClass.ACCOUNT, uid, replaceAttributes, options);
     }
